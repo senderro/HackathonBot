@@ -12,9 +12,6 @@ const redisOpts = {
   password: process.env.REDIS_PASSWORD,
 };
 
-if (process.env.REDIS_TLS === "true") {
-  redisOpts.tls = {};
-}
 const redis = new Redis(redisOpts);
 
 const TOKEN = process.env.BOT_TOKEN;
