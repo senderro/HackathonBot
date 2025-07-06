@@ -1,4 +1,6 @@
 import express from "express";
+import Redis from "ioredis";
+
 
 const app = express();
 app.use(express.json());
