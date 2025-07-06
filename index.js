@@ -8,6 +8,7 @@ app.use(express.json());
 const redisOpts = {
   host:     process.env.REDIS_HOST,
   port:     parseInt(process.env.REDIS_PORT, 10),
+  decode_responses: True,
   username: process.env.REDIS_USERNAME,
   password: process.env.REDIS_PASSWORD,
 };
