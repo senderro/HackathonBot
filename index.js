@@ -4,7 +4,19 @@ import Redis from "ioredis";
 const app = express();
 app.use(express.json());
 
-const redis = new Redis(process.env.REDIS_URL);
+
+const redisOpts = {
+  host:     process.env.REDIS_HOST,
+  port:     parseInt(process.env.REDIS_PORT, 10),
+  username: process.env.REDIS_USERNAME,
+  password: process.env.REDIS_PASSWORD,
+};
+
+if (process.env.REDIS_TLS === "true") {
+  redisOpts.tls = {};
+}
+const redis = new Redis(redisOpts);
+
 const TOKEN = process.env.BOT_TOKEN;
 const API   = `https://api.telegram.org/bot${TOKEN}`;
 
