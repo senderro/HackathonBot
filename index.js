@@ -10,6 +10,7 @@ const API   = `https://api.telegram.org/bot${TOKEN}`;
 
 // Receiver: recebe webhook e empilha no Redis
 app.post("/webhook", (req, res) => {
+  console.log(" [Receiver] update recebido:", JSON.stringify(req.body));
   res.sendStatus(200); // ACK rápido ao Telegram
   redis.lpush("telegram_queue", JSON.stringify(req.body))
        .catch(console.error);
@@ -22,7 +23,9 @@ app.get("/healthz", (_, res) => res.send("OK"));
 async function consume() {
   while (true) {
     try {
+      console.log("… [Worker] aguardando item na fila");
       const [, data] = await redis.brpop("telegram_queue", 0);
+      console.log("→ [Worker] resgatou da fila:", data);
       const update = JSON.parse(data);
       const msg    = update.message;
       if (!msg?.text) continue;
@@ -36,6 +39,7 @@ async function consume() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id, text: reply })
       });
+      console.log(`→ [Worker] respondeu chat ${chat_id} com “${reply}”`);
     } catch (err) {
       console.error("Erro no worker:", err);
       await new Promise(r => setTimeout(r, 1000));
