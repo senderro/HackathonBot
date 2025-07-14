@@ -33,6 +33,8 @@ app.post("/webhook", async (req, res) => {
       });
 
       // envia botão “Criar bag”
+      const webAppUrl = `https://hackaton-mini-app-nine.vercel.app/create?chat_id=${chat.id}&msg_id=${welcome_message_id}&admin_id=${from.id}`;
+
       const resp = await fetch(`${API}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -41,7 +43,7 @@ app.post("/webhook", async (req, res) => {
           text: "👋 Olá! Não há nenhuma bag ativa neste grupo ainda.",
           reply_markup: {
             inline_keyboard: [
-              [{ text: "➕ Criar bag", callback_data: "createBag" }],
+              [{ text: "➕ Criar bag", web_app: { url: webAppUrl } }],
             ],
           },
         }),
