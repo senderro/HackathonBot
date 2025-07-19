@@ -318,6 +318,74 @@ if (bag.state === "BAG_CREATED") {
 
   return;
 }
+if (msg.text.trim().toLowerCase() === "/finalizar") {
+  console.log("Comando /finalizar recebido no chat", chat_id);
+
+  const bag = await prisma.bag.findUnique({
+    where: { chat_id: BigInt(chat_id) },
+  });
+  if (!bag || bag.state !== ChatState.BAG_CREATED) {
+    await fetch(`${API}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id,
+        text: "❌ Não há nenhuma bag ativa para finalizar. Use após criar a bag e registrar transações.",
+      }),
+    });
+    return;
+  }
+
+  // fetch participantes
+  const participants = await prisma.bagUser.findMany({
+    where: { bag_id: bag.id },
+    include: { user: true },
+  });
+
+  const usuarios = {};
+  const gastos = {};
+  participants.forEach(p => {
+    const uid = p.user_id.toString();
+    usuarios[uid] = p.user.first_name || p.user.username || uid;
+    gastos[uid] = p.total_spent || 0;
+  });
+
+  console.log("Payload /splitbill", { usuarios, gastos });
+
+  const resp = await fetch("https://hackatonllm-production.up.railway.app/splitbill", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.EXTERNAL_API_TOKEN}`,
+    },
+    body: JSON.stringify({ usuarios, gastos }),
+  });
+  const json = await resp.json();
+  console.log("Resposta /splitbill:", json);
+
+  // Montar mensagem resumida
+  let msgText = "📊 *Resumo final da bag*\n\n*Transações por pessoa:*\n";
+  if (json.transacoes_por_pessoa && Array.isArray(json.transacoes_por_pessoa)) {
+    json.transacoes_por_pessoa.forEach(t => {
+      msgText += `• *${t.de}* ➝ *${t.para}*: R$ ${t.valor.toFixed(2)}\n`;
+    });
+  }
+
+  msgText += `\n*Gasto por pessoa:* R$ ${json.gasto_por_pessoa.toFixed(2)}\n`;
+  msgText += `*Total gasto:* R$ ${json.total_gastos.toFixed(2)}`;
+
+  await fetch(`${API}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id,
+      text: msgText,
+      parse_mode: "Markdown",
+    }),
+  });
+
+  return;
+}
   // Fallback (ping)
   const text = msg.text.trim().toLowerCase();
   const reply = text === "ping" ? "pong" : "Envie 'ping' para testar!";
