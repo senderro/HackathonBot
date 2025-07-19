@@ -210,36 +210,97 @@ app.post("/webhook", async (req, res) => {
     where: { chat_id: BigInt(chat_id) },
   });
   if (bag.state === ChatState.AWAITING_NAME && msg.from.id === Number(bag.admin_user_id)) {
-  const nome = msg.text.trim();
+      const nome = msg.text.trim();
 
-  // 1️⃣ Salva nome e atualiza estado
-  await prisma.bag.update({
-    where: { chat_id: BigInt(chat_id) },
+      // 1️⃣ Salva nome e atualiza estado
+      await prisma.bag.update({
+        where: { chat_id: BigInt(chat_id) },
+        data: {
+          name: nome,
+          state: ChatState.BAG_CREATED,
+        },
+      });
+
+      // 2️⃣ Notifica criação da bag
+      await fetch(`${API}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id,
+          text: `🎉 Bag *${nome}* criada com sucesso!\n\nQuem quiser participar, clique em “Entrar na bag”.`,
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "👥 Entrar na bag", callback_data: "joinBag" }],
+            ],
+          },
+        }),
+      });
+
+      return;
+  }
+  // 3.2) Processar transação após bag criada
+if (bag.state === "BAG_CREATED") {
+  // 1️⃣ Registrar transação local
+  await prisma.transaction.create({
     data: {
-      name: nome,
-      state: ChatState.BAG_CREATED,
+      bag_id: bag.id,
+      user_id: BigInt(msg.from.id),
+      message_text: msg.text,
     },
   });
 
-  // 2️⃣ Notifica criação da bag
-  await fetch(`${API}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id,
-      text: `🎉 Bag *${nome}* criada com sucesso!\n\nQuem quiser participar, clique em “Entrar na bag”.`,
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "👥 Entrar na bag", callback_data: "joinBag" }],
-        ],
-      },
-    }),
+  // 2️⃣ Preparar payload
+  const participants = await prisma.bagUser.findMany({
+    where: { bag_id: bag.id },
+    include: { user: true },
   });
+  const usuarios = {};
+  const gastos = {};
+
+  participants.forEach(p => {
+    const uid = p.user_id.toString();
+    usuarios[uid] = p.user.first_name;
+    gastos[uid] = p.total_spent || 0;
+  });
+
+  const ultima_transacao = {
+    usuario_id: msg.from.id.toString(),
+    descricao: msg.text,
+  };
+
+  // 3️⃣ Chamada à API externa
+  const resp = await fetch(
+    "https://hackatonllm-production.up.railway.app/newtransaction",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.EXTERNAL_API_TOKEN}`,
+      },
+      body: JSON.stringify({ usuarios, gastos, ultima_transacao }),
+    }
+  );
+  const json = await resp.json();
+  console.log("API response:", json);
+
+  // 4️⃣ Atualizar gastos no DB
+  if (json.gastos) {
+    for (const uid in json.gastos) {
+      await prisma.bagUser.update({
+        where: {
+          bag_id_user_id: {
+            bag_id: bag.id,
+            user_id: BigInt(uid),
+          },
+        },
+        data: { total_spent: json.gastos[uid] },
+      });
+    }
+  }
 
   return;
 }
-
   // Fallback (ping)
   const text = msg.text.trim().toLowerCase();
   const reply = text === "ping" ? "pong" : "Envie 'ping' para testar!";

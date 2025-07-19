@@ -14,6 +14,7 @@ model User {
   last_name  String?
   created_at DateTime    @default(now())
   bags       BagUser[]
+  transactions       Transaction[]
   bags_admin Bag[]       @relation("AdminOf")
   aliases    UserAlias[]
 
@@ -37,6 +38,7 @@ model Bag {
   created_at         DateTime  @default(now())
   welcome_message_id BigInt?
   participants       BagUser[]
+  transactions       Transaction[]
   admin              User      @relation("AdminOf", fields: [admin_user_id], references: [id])
   state              ChatState @default(BOT_ADDED)
   @@map("bags")
@@ -48,6 +50,7 @@ model BagUser {
   bag_id    Int
   user_id   BigInt
   joined_at DateTime @default(now())
+  total_spent  Float?   @default(0)
   bag       Bag      @relation(fields: [bag_id], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
@@ -55,6 +58,18 @@ model BagUser {
   @@map("bag_users")
 }
 
+model Transaction {
+  id            Int       @id @default(autoincrement())
+  bag_id        Int
+  user_id       BigInt
+  message_text  String
+  created_at    DateTime  @default(now())
+
+  bag           Bag       @relation(fields: [bag_id], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("transactions")
+}
 
 
 enum ChatState {
