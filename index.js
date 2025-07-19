@@ -32,15 +32,30 @@ app.post("/webhook", async (req, res) => {
         },
       });
 
-      // envia botão “Criar bag”
-      const webAppUrl = `https://hackaton-mini-app-nine.vercel.app/create?chat_id=${chat.id}&msg_id=${welcome_message_id}&admin_id=${from.id}`;
-
+      // 1.1) envia mensagem inicial sem botão WebApp
+      let welcome_message_id;
       const resp = await fetch(`${API}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id,
           text: "👋 Olá! Não há nenhuma bag ativa neste grupo ainda.",
+        }),
+      });
+      const data = await resp.json();
+      if (!data.ok) return;
+      welcome_message_id = data.result.message_id;
+
+      // 1.2) monta a URL agora que temos welcome_message_id
+      const webAppUrl = `https://hackaton-mini-app-nine.vercel.app/create?chat_id=${chat_id}&msg_id=${welcome_message_id}&admin_id=${admin_id}`;
+
+      // 1.3) edita o reply_markup para incluir o botão WebApp
+      await fetch(`${API}/editMessageReplyMarkup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id,
+          message_id: welcome_message_id,
           reply_markup: {
             inline_keyboard: [
               [{ text: "➕ Criar bag", web_app: { url: webAppUrl } }],
@@ -48,21 +63,19 @@ app.post("/webhook", async (req, res) => {
           },
         }),
       });
-      const data = await resp.json();
-      if (data.ok) {
-        const welcome_message_id = data.result.message_id;
-        // salva no DB com placeholder
-        await prisma.bag.upsert({
-          where: { chat_id: BigInt(chat_id) },
-          update: { welcome_message_id },
-          create: {
-            chat_id: BigInt(chat_id),
-            name: "__temp__",
-            admin_user_id: BigInt(admin_id),
-            welcome_message_id,
-          },
-        });
-      }
+
+      // 1.4) salva no DB
+      await prisma.bag.upsert({
+        where: { chat_id: BigInt(chat_id) },
+        update: { welcome_message_id },
+        create: {
+          chat_id: BigInt(chat_id),
+          name: "__temp__",
+          admin_user_id: BigInt(admin_id),
+          welcome_message_id,
+        },
+      });
+
       return;
     }
   }
