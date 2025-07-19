@@ -13,11 +13,10 @@ app.post("/webhook", async (req, res) => {
   console.log("→ Received update:", JSON.stringify(update));
   res.sendStatus(200);
 
-  // 1) Bot adicionado ao grupo
   if (update.my_chat_member) {
     const { new_chat_member, from, chat } = update.my_chat_member;
     if (new_chat_member.user.is_bot && new_chat_member.status === "member") {
-      const chat_id = chat.id;
+      const chat_id  = chat.id;
       const admin_id = from.id;
 
       // upsert do admin em users
@@ -32,39 +31,31 @@ app.post("/webhook", async (req, res) => {
         },
       });
 
-      // 1.1) envia mensagem inicial sem botão WebApp
-      let welcome_message_id;
+      // 1.1) monta a URL do WebApp sem msg_id
+      const webAppUrl = `https://hackaton-mini-app-nine.vercel.app/create?chat_id=${chat_id}&admin_id=${admin_id}`;
+
+      // 1.2) envia mensagem já com o botão WebApp
       const resp = await fetch(`${API}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id,
           text: "👋 Olá! Não há nenhuma bag ativa neste grupo ainda.",
-        }),
-      });
-      const data = await resp.json();
-      if (!data.ok) return;
-      welcome_message_id = data.result.message_id;
-
-      // 1.2) monta a URL agora que temos welcome_message_id
-      const webAppUrl = `https://hackaton-mini-app-nine.vercel.app/create?chat_id=${chat_id}&msg_id=${welcome_message_id}&admin_id=${admin_id}`;
-
-      // 1.3) edita o reply_markup para incluir o botão WebApp
-      await fetch(`${API}/editMessageReplyMarkup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id,
-          message_id: welcome_message_id,
           reply_markup: {
             inline_keyboard: [
-              [{ text: "➕ Criar bag", web_app: { url: webAppUrl } }],
+              [{ text: "➕ Criar bag", web_app: { url: webAppUrl } }]
             ],
           },
         }),
       });
+      const data = await resp.json();
+      if (!data.ok) {
+        console.error("sendMessage error:", data);
+        return;
+      }
 
-      // 1.4) salva no DB
+      // 1.3) pega o message_id e salva no DB
+      const welcome_message_id = data.result.message_id;
       await prisma.bag.upsert({
         where: { chat_id: BigInt(chat_id) },
         update: { welcome_message_id },

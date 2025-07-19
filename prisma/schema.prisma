@@ -8,46 +8,46 @@ datasource db {
 }
 
 model User {
-  id            BigInt       @id
-  username      String?
-  first_name    String?
-  last_name     String?
-  created_at    DateTime     @default(now())
-  aliases       UserAlias[]
-  bags_admin    Bag[]        @relation("AdminOf")     // apenas a relação
-  bags          BagUser[]
+  id         BigInt      @id
+  username   String?
+  first_name String?
+  last_name  String?
+  created_at DateTime    @default(now())
+  bags       BagUser[]
+  bags_admin Bag[]       @relation("AdminOf")
+  aliases    UserAlias[]
 
   @@map("users")
 }
 
 model UserAlias {
-  id       Int     @id @default(autoincrement())
-  user     User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  user_id  BigInt
-  alias    String
+  id      Int    @id @default(autoincrement())
+  user_id BigInt
+  alias   String
+  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@map("user_aliases")
 }
 
 model Bag {
-  id                  Int        @id @default(autoincrement())
-  chat_id             BigInt     @unique
-  name                String
-  admin               User       @relation("AdminOf", fields: [admin_user_id], references: [id])
-  admin_user_id       BigInt
-  created_at          DateTime   @default(now())
-  welcome_message_id  BigInt?
-  participants        BagUser[]
+  id                 Int       @id @default(autoincrement())
+  chat_id            BigInt    @unique
+  name               String
+  admin_user_id      BigInt
+  created_at         DateTime  @default(now())
+  welcome_message_id BigInt?
+  participants       BagUser[]
+  admin              User      @relation("AdminOf", fields: [admin_user_id], references: [id])
 
   @@map("bags")
 }
 
 model BagUser {
-  bag          Bag      @relation(fields: [bag_id], references: [id], onDelete: Cascade)
-  bag_id       Int
-  user         User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  user_id      BigInt
-  joined_at    DateTime @default(now())
+  bag_id    Int
+  user_id   BigInt
+  joined_at DateTime @default(now())
+  bag       Bag      @relation(fields: [bag_id], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@id([bag_id, user_id])
   @@map("bag_users")
