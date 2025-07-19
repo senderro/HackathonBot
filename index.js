@@ -10,16 +10,18 @@ const API   = `https://api.telegram.org/bot${TOKEN}`;
 
 app.post("/webhook", async (req, res) => {
   const update = req.body;
-  console.log("→ Received update:", JSON.stringify(update));
+  console.log("→ Received update keys:", Object.keys(update));
+  console.log("→ Full update:", JSON.stringify(update));
   res.sendStatus(200);
 
   // ── 1) Bot adicionado no grupo ──────────────────────────────────────────────
   if (update.my_chat_member) {
     const { new_chat_member, from, chat } = update.my_chat_member;
+    console.log("my_chat_member event:", chat.id, new_chat_member.status);
     if (new_chat_member.user.is_bot && new_chat_member.status === "member") {
       const chat_id  = chat.id;
       const admin_id = from.id;
-
+        console.log("Bot entrou no grupo", chat_id, "por admin", admin_id);
       await prisma.user.upsert({
         where: { id: BigInt(admin_id) },
         update: {},
@@ -42,7 +44,7 @@ app.post("/webhook", async (req, res) => {
           state: ChatState.BOT_ADDED,
         },
       });
-
+console.log("Bag after upsert:", bag);
       // Envia mensagem conforme estado
       if (
         bag.state === ChatState.BOT_ADDED ||
