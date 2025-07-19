@@ -6,7 +6,7 @@
   "scripts": {
     "prepare": "prisma generate",
     "dev": "prisma db push && node index.js",
-    "start": "prisma db push && node index.js"
+    "start": "node index.js"
   },
   "dependencies": {
     "@prisma/client": "^6.11.1",

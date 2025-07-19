@@ -209,6 +209,11 @@ app.post("/webhook", async (req, res) => {
   const bag = await prisma.bag.findUnique({
     where: { chat_id: BigInt(chat_id) },
   });
+  if (!bag) {
+    console.warn("Nenhuma bag encontrada para chat_id", chat_id);
+    return;
+  }
+
   if (bag.state === ChatState.AWAITING_NAME && msg.from.id === Number(bag.admin_user_id)) {
       const nome = msg.text.trim();
 
