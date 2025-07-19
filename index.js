@@ -305,6 +305,16 @@ if (bag.state === "BAG_CREATED") {
       });
     }
   }
+  const descricao = msg.text;
+  await fetch(`${API}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id,
+      text: `✅ Transação registrada!\n👤 <a href="tg://user?id=${msg.from.id}">${msg.from.first_name}</a>: ${descricao}`,
+      parse_mode: "HTML",
+    }),
+  });
 
   return;
 }
