@@ -1,5 +1,5 @@
 import express from "express";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, ChatState } from "@prisma/client";
 
 const app = express();
 app.use(express.json());
@@ -13,13 +13,13 @@ app.post("/webhook", async (req, res) => {
   console.log("→ Received update:", JSON.stringify(update));
   res.sendStatus(200);
 
+  // ── 1) Bot adicionado no grupo ──────────────────────────────────────────────
   if (update.my_chat_member) {
     const { new_chat_member, from, chat } = update.my_chat_member;
     if (new_chat_member.user.is_bot && new_chat_member.status === "member") {
       const chat_id  = chat.id;
       const admin_id = from.id;
 
-      // upsert do admin em users
       await prisma.user.upsert({
         where: { id: BigInt(admin_id) },
         update: {},
@@ -31,81 +31,98 @@ app.post("/webhook", async (req, res) => {
         },
       });
 
-      // 1.1) monta a URL do WebApp sem msg_id
-      const webAppUrl = `https://hackaton-mini-app-nine.vercel.app/create?chat_id=${chat_id}&admin_id=${admin_id}`;
-
-      // 1.2) envia mensagem já com o botão WebApp
-      const resp = await fetch(`${API}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id,
-          text: "👋 Olá! Não há nenhuma bag ativa neste grupo ainda.",
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "➕ Criar bag", web_app: { url: webAppUrl } }]
-            ],
-          },
-        }),
-      });
-      const data = await resp.json();
-      if (!data.ok) {
-        console.error("sendMessage error:", data);
-        return;
-      }
-
-      // 1.3) pega o message_id e salva no DB
-      const welcome_message_id = data.result.message_id;
-      await prisma.bag.upsert({
+      let bag = await prisma.bag.upsert({
         where: { chat_id: BigInt(chat_id) },
-        update: { welcome_message_id },
+        update: {},
         create: {
           chat_id: BigInt(chat_id),
-          name: "__temp__",
           admin_user_id: BigInt(admin_id),
-          welcome_message_id,
+          name: "",
+          welcome_message_id: 0,
+          state: ChatState.BOT_ADDED,
         },
       });
+
+      // Envia mensagem conforme estado
+      if (
+        bag.state === ChatState.BOT_ADDED ||
+        bag.state === ChatState.AWAITING_CREATE
+      ) {
+        const resp = await fetch(`${API}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id,
+            text: "👋 Olá! Não há nenhuma bag ativa neste grupo ainda.",
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "➕ Criar bag", callback_data: "createBag" }],
+              ],
+            },
+          }),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          await prisma.bag.update({
+            where: { chat_id: BigInt(chat_id) },
+            data: {
+              welcome_message_id: data.result.message_id,
+              state: ChatState.AWAITING_CREATE,
+            },
+          });
+        }
+      } else if (bag.state === ChatState.BAG_CREATED) {
+        await fetch(`${API}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id,
+            text: `🎉 Bag *${bag.name}* já criada!`,
+            parse_mode: "Markdown",
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "👥 Entrar na bag", callback_data: "joinBag" }],
+              ],
+            },
+          }),
+        });
+      }
 
       return;
     }
   }
 
-  // 2) CallbackQuery handler
+  // ── 2) CallbackQuery handler ─────────────────────────────────────────────────
   if (update.callback_query) {
     const { data, message, from, id: callback_query_id } = update.callback_query;
     const chat_id = message.chat.id;
     const msg_id = message.message_id;
     const user_id = from.id;
 
-    // A) createBag
-    if (data === "createBag") {
-      const bag = await prisma.bag.update({
-        where: { chat_id: BigInt(chat_id) },
-        data: {
-          name: "teste",
-          admin_user_id: BigInt(user_id),
-        },
-      });
+    const bag = await prisma.bag.findUnique({
+      where: { chat_id: BigInt(chat_id) },
+    });
+    if (!bag) return;
 
-      // edita a mensagem original
+    // A) createBag
+    if (data === "createBag" && bag.state === ChatState.AWAITING_CREATE) {
       await fetch(`${API}/editMessageText`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id,
           message_id: msg_id,
-          text: `🎉 Bag *${bag.name}* criada com sucesso!\n\nQuem quiser participar, clique em “Entrar na bag”.`,
+          text: "Por favor, me envie o *nome da bag*.",
           parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "👥 Entrar na bag", callback_data: "joinBag" }],
-            ],
-          },
+          reply_markup: { inline_keyboard: [] },
         }),
       });
 
-      // limpa loading do botão
+      await prisma.bag.update({
+        where: { chat_id: BigInt(chat_id) },
+        data: { state: ChatState.AWAITING_NAME },
+      });
+
       await fetch(`${API}/answerCallbackQuery`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -116,8 +133,7 @@ app.post("/webhook", async (req, res) => {
     }
 
     // B) joinBag
-    if (data === "joinBag") {
-      // garante user em users
+    if (data === "joinBag" && bag.state === ChatState.BAG_CREATED) {
       await prisma.user.upsert({
         where: { id: BigInt(user_id) },
         update: {},
@@ -129,13 +145,6 @@ app.post("/webhook", async (req, res) => {
         },
       });
 
-      // busca a bag
-      const bag = await prisma.bag.findUnique({
-        where: { chat_id: BigInt(chat_id) },
-      });
-      if (!bag) return;
-
-      // adiciona em bag_users
       await prisma.bagUser.upsert({
         where: {
           bag_id_user_id: {
@@ -150,7 +159,6 @@ app.post("/webhook", async (req, res) => {
         },
       });
 
-      // retira lista de participantes
       const participants = await prisma.bagUser.findMany({
         where: { bag_id: bag.id },
         include: { user: true },
@@ -164,7 +172,6 @@ app.post("/webhook", async (req, res) => {
         })
         .join(" ");
 
-      // edita mensagem para mostrar quem já entrou
       await fetch(`${API}/editMessageText`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -181,7 +188,6 @@ app.post("/webhook", async (req, res) => {
         }),
       });
 
-      // confirma pro usuário
       await fetch(`${API}/answerCallbackQuery`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -195,13 +201,48 @@ app.post("/webhook", async (req, res) => {
     }
   }
 
-  // 3) Fallback de texto
+  // ── 3) Mensagens de texto ─────────────────────────────────────────────────────
   const msg = update.message;
   if (!msg?.text) return;
   const chat_id = msg.chat.id;
+
+  const bag = await prisma.bag.findUnique({
+    where: { chat_id: BigInt(chat_id) },
+  });
+  if (bag?.state === ChatState.AWAITING_NAME && msg.from.id === Number(bag.admin_user_id)) {
+    const nome = msg.text.trim();
+
+    await prisma.bag.update({
+      where: { chat_id: BigInt(chat_id) },
+      data: {
+        name: nome,
+        state: ChatState.BAG_CREATED,
+      },
+    });
+
+    const welcome_message_id = bag.welcome_message_id;
+    await fetch(`${API}/editMessageText`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id,
+        message_id: welcome_message_id,
+        text: `🎉 Bag *${nome}* criada com sucesso!\n\nQuem quiser participar, clique em “Entrar na bag”.`,
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "👥 Entrar na bag", callback_data: "joinBag" }],
+          ],
+        },
+      }),
+    });
+
+    return;
+  }
+
+  // Fallback (ping)
   const text = msg.text.trim().toLowerCase();
   const reply = text === "ping" ? "pong" : "Envie 'ping' para testar!";
-
   await fetch(`${API}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
