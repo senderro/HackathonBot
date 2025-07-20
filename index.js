@@ -247,154 +247,177 @@ console.log("Bag after upsert:", bag);
       return;
   }
   if (msg.text.trim().toLowerCase() === "/finalizar") {
-  console.log("Comando /finalizar recebido no chat", chat_id);
+      console.log("Comando /finalizar recebido no chat", chat_id);
 
-  const bag = await prisma.bag.findUnique({
-    where: { chat_id: BigInt(chat_id) },
-  });
-  if (!bag || bag.state !== ChatState.BAG_CREATED) {
+      const bag = await prisma.bag.findUnique({
+        where: { chat_id: BigInt(chat_id) },
+      });
+
+      if (!bag || bag.state !== ChatState.BAG_CREATED) {
+        await fetch(`${API}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id,
+            text: "❌ Não há nenhuma bag ativa para finalizar. Use após criar a bag e registrar transações.",
+          }),
+        });
+        return;
+      }
+
+      // 1️⃣ Obter participantes
+      const participants = await prisma.bagUser.findMany({
+        where: { bag_id: bag.id },
+        include: { user: true },
+      });
+
+      const usuarios = {};
+      const gastos = {};
+      participants.forEach(p => {
+        const uid = p.user_id.toString();
+        usuarios[uid] = p.user.first_name || p.user.username || uid;
+        gastos[uid] = p.total_spent || 0;
+      });
+
+      console.log("Payload /splitbill", { usuarios, gastos });
+
+      // 2️⃣ Chamar API externa
+      const resp = await fetch("https://hackatonllm-production.up.railway.app/splitbill", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.EXTERNAL_API_TOKEN}`,
+        },
+        body: JSON.stringify({ usuarios, gastos }),
+      });
+
+      const json = await resp.json();
+      console.log("Resposta /splitbill:", json);
+
+      // 3️⃣ Criar PendingPayments
+      if (Array.isArray(json.transacoes_para_acerto)) {
+        for (const t of json.transacoes_para_acerto) {
+          const fromId = Object.entries(usuarios).find(([id, nome]) => nome === t.de)?.[0];
+          const toId = Object.entries(usuarios).find(([id, nome]) => nome === t.para)?.[0];
+
+          if (fromId && toId) {
+            await prisma.pendingPayment.create({
+              data: {
+                bag_id: bag.id,
+                user_id_from: BigInt(fromId),
+                user_id_to: BigInt(toId),
+                valor: t.valor,
+                pago: false,
+                data_pagamento: null,
+              },
+            });
+          }
+        }
+      }
+
+      // 4️⃣ Atualizar estado da bag
+      await prisma.bag.update({
+        where: { id: bag.id },
+        data: { state: ChatState.AWAITING_PAYMENTS },
+      });
+
+      // 5️⃣ Enviar mensagem de resumo
+      let msgText = "📊 *Resumo final da bag*\n\n*Transações por pessoa:*\n";
+      if (json.transacoes_para_acerto && Array.isArray(json.transacoes_para_acerto)) {
+        json.transacoes_para_acerto.forEach(t => {
+          msgText += `• *${t.de}* ➝ *${t.para}*: R$ ${t.valor.toFixed(2)}\n`;
+        });
+      }
+
+      msgText += `\n*Gasto por pessoa:* R$ ${json.gasto_por_pessoa.toFixed(2)}\n`;
+      msgText += `*Total gasto:* R$ ${json.total_gastos.toFixed(2)}`;
+
+      await fetch(`${API}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id,
+          text: msgText,
+          parse_mode: "Markdown",
+        }),
+      });
+
+      return;
+    }
+  // 3.2) Processar transação após bag criada
+if (bag.state === ChatState.BAG_CREATED && msg.text.trim().toLowerCase().startsWith("/g")) {
+    // 1️⃣ Registrar transação local
+    await prisma.transaction.create({
+      data: {
+        bag_id: bag.id,
+        user_id: BigInt(msg.from.id),
+        message_text: msg.text,
+      },
+    });
+
+    // 2️⃣ Preparar payload
+    const participants = await prisma.bagUser.findMany({
+      where: { bag_id: bag.id },
+      include: { user: true },
+    });
+    const usuarios = {};
+    const gastos = {};
+
+    participants.forEach(p => {
+      const uid = p.user_id.toString();
+      usuarios[uid] = p.user.first_name;
+      gastos[uid] = p.total_spent || 0;
+    });
+
+    const ultima_transacao = {
+      usuario_id: msg.from.id.toString(),
+      descricao: msg.text,
+    };
+
+    // 3️⃣ Chamada à API externa
+    const resp = await fetch(
+      "https://hackatonllm-production.up.railway.app/newtransaction",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.EXTERNAL_API_TOKEN}`,
+        },
+        body: JSON.stringify({ usuarios, gastos, ultima_transacao }),
+      }
+    );
+    const json = await resp.json();
+    console.log("API response:", json);
+
+    // 4️⃣ Atualizar gastos no DB
+    if (json.gastos) {
+      for (const uid in json.gastos) {
+        await prisma.bagUser.update({
+          where: {
+            bag_id_user_id: {
+              bag_id: bag.id,
+              user_id: BigInt(uid),
+            },
+          },
+          data: { total_spent: json.gastos[uid] },
+        });
+      }
+    }
+    const descricao = msg.text;
     await fetch(`${API}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id,
-        text: "❌ Não há nenhuma bag ativa para finalizar. Use após criar a bag e registrar transações.",
+        text: `✅ Transação registrada!\n👤 <a href="tg://user?id=${msg.from.id}">${msg.from.first_name}</a>: ${descricao}`,
+        parse_mode: "HTML",
       }),
     });
+
     return;
   }
 
-  // fetch participantes
-  const participants = await prisma.bagUser.findMany({
-    where: { bag_id: bag.id },
-    include: { user: true },
-  });
-
-  const usuarios = {};
-  const gastos = {};
-  participants.forEach(p => {
-    const uid = p.user_id.toString();
-    usuarios[uid] = p.user.first_name || p.user.username || uid;
-    gastos[uid] = p.total_spent || 0;
-  });
-
-  console.log("Payload /splitbill", { usuarios, gastos });
-
-  const resp = await fetch("https://hackatonllm-production.up.railway.app/splitbill", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${process.env.EXTERNAL_API_TOKEN}`,
-    },
-    body: JSON.stringify({ usuarios, gastos }),
-  });
-  const json = await resp.json();
-  console.log("Resposta /splitbill:", json);
-
-  // Montar mensagem resumida
-  let msgText = "📊 *Resumo final da bag*\n\n*Transações por pessoa:*\n";
-  if (json.transacoes_por_pessoa && Array.isArray(json.transacoes_por_pessoa)) {
-    json.transacoes_por_pessoa.forEach(t => {
-      msgText += `• *${t.de}* ➝ *${t.para}*: R$ ${t.valor.toFixed(2)}\n`;
-    });
-  }
-
-  msgText += `\n*Gasto por pessoa:* R$ ${json.gasto_por_pessoa.toFixed(2)}\n`;
-  msgText += `*Total gasto:* R$ ${json.total_gastos.toFixed(2)}`;
-
-  await fetch(`${API}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id,
-      text: msgText,
-      parse_mode: "Markdown",
-    }),
-  });
-
-  return;
-}
-  // 3.2) Processar transação após bag criada
-if (bag.state === "BAG_CREATED") {
-  // 1️⃣ Registrar transação local
-  await prisma.transaction.create({
-    data: {
-      bag_id: bag.id,
-      user_id: BigInt(msg.from.id),
-      message_text: msg.text,
-    },
-  });
-
-  // 2️⃣ Preparar payload
-  const participants = await prisma.bagUser.findMany({
-    where: { bag_id: bag.id },
-    include: { user: true },
-  });
-  const usuarios = {};
-  const gastos = {};
-
-  participants.forEach(p => {
-    const uid = p.user_id.toString();
-    usuarios[uid] = p.user.first_name;
-    gastos[uid] = p.total_spent || 0;
-  });
-
-  const ultima_transacao = {
-    usuario_id: msg.from.id.toString(),
-    descricao: msg.text,
-  };
-
-  // 3️⃣ Chamada à API externa
-  const resp = await fetch(
-    "https://hackatonllm-production.up.railway.app/newtransaction",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.EXTERNAL_API_TOKEN}`,
-      },
-      body: JSON.stringify({ usuarios, gastos, ultima_transacao }),
-    }
-  );
-  const json = await resp.json();
-  console.log("API response:", json);
-
-  // 4️⃣ Atualizar gastos no DB
-  if (json.gastos) {
-    for (const uid in json.gastos) {
-      await prisma.bagUser.update({
-        where: {
-          bag_id_user_id: {
-            bag_id: bag.id,
-            user_id: BigInt(uid),
-          },
-        },
-        data: { total_spent: json.gastos[uid] },
-      });
-    }
-  }
-  const descricao = msg.text;
-  await fetch(`${API}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id,
-      text: `✅ Transação registrada!\n👤 <a href="tg://user?id=${msg.from.id}">${msg.from.first_name}</a>: ${descricao}`,
-      parse_mode: "HTML",
-    }),
-  });
-
-  return;
-}
-
-  // Fallback (ping)
-  const text = msg.text.trim().toLowerCase();
-  const reply = text === "ping" ? "pong" : "Envie 'ping' para testar!";
-  await fetch(`${API}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id, text: reply }),
-  });
+  
 });
 
 app.get("/healthz", (_, res) => res.send("OK"));
