@@ -8,17 +8,17 @@ datasource db {
 }
 
 model User {
-  id                   BigInt            @id
+  id                   BigInt           @id
   username             String?
   first_name           String?
   last_name            String?
-  created_at           DateTime          @default(now())
+  created_at           DateTime         @default(now())
   bags                 BagUser[]
+  bags_admin           Bag[]            @relation("AdminOf")
+  pagamentos_feitos    PendingPayment[] @relation("Pagador")
+  pagamentos_recebidos PendingPayment[] @relation("Recebedor")
   transactions         Transaction[]
-  bags_admin           Bag[]             @relation("AdminOf")
   aliases              UserAlias[]
-  pagamentos_feitos    PendingPayment[]  @relation("Pagador")
-  pagamentos_recebidos PendingPayment[]  @relation("Recebedor")
 
   @@map("users")
 }
@@ -39,51 +39,50 @@ model Bag {
   admin_user_id      BigInt
   created_at         DateTime         @default(now())
   welcome_message_id BigInt?
-  participants       BagUser[]
-  transactions       Transaction[]
-  admin              User             @relation("AdminOf", fields: [admin_user_id], references: [id])
   state              ChatState        @default(BOT_ADDED)
-  pagamentos         PendingPayment[] // 👈 nova relação
+  participants       BagUser[]
+  admin              User             @relation("AdminOf", fields: [admin_user_id], references: [id])
+  pagamentos         PendingPayment[]
+  transactions       Transaction[]
 
   @@map("bags")
 }
 
 model BagUser {
-  bag_id        Int
-  user_id       BigInt
-  joined_at     DateTime @default(now())
-  total_spent   Float?   @default(0)
-  bag           Bag      @relation(fields: [bag_id], references: [id], onDelete: Cascade)
-  user          User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  bag_id      Int
+  user_id     BigInt
+  joined_at   DateTime @default(now())
+  total_spent Float?   @default(0)
+  bag         Bag      @relation(fields: [bag_id], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@id([bag_id, user_id])
   @@map("bag_users")
 }
 
 model Transaction {
-  id            Int       @id @default(autoincrement())
-  bag_id        Int
-  user_id       BigInt
-  message_text  String
-  created_at    DateTime  @default(now())
-  bag           Bag       @relation(fields: [bag_id], references: [id], onDelete: Cascade)
-  user          User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  id           Int      @id @default(autoincrement())
+  bag_id       Int
+  user_id      BigInt
+  message_text String
+  created_at   DateTime @default(now())
+  bag          Bag      @relation(fields: [bag_id], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@map("transactions")
 }
 
 model PendingPayment {
-  id              Int       @id @default(autoincrement())
-  bag_id          Int
-  user_id_from    BigInt    // Quem deve pagar
-  user_id_to      BigInt    // Quem vai receber
-  valor           Decimal   @db.Decimal(10, 2)
-  pago            Boolean   @default(false)
-  data_pagamento  DateTime?
-
-  bag             Bag       @relation(fields: [bag_id], references: [id], onDelete: Cascade)
-  devedor         User      @relation("Pagador", fields: [user_id_from], references: [id], onDelete: Cascade)
-  recebedor       User      @relation("Recebedor", fields: [user_id_to], references: [id], onDelete: Cascade)
+  id             Int       @id @default(autoincrement())
+  bag_id         Int
+  user_id_from   BigInt
+  user_id_to     BigInt
+  valor          Decimal   @db.Decimal(10, 2)
+  pago           Boolean   @default(false)
+  data_pagamento DateTime?
+  bag            Bag       @relation(fields: [bag_id], references: [id], onDelete: Cascade)
+  devedor        User      @relation("Pagador", fields: [user_id_from], references: [id], onDelete: Cascade)
+  recebedor      User      @relation("Recebedor", fields: [user_id_to], references: [id], onDelete: Cascade)
 
   @@map("pending_payments")
 }
