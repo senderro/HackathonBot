@@ -136,16 +136,40 @@ console.log("Bag after upsert:", bag);
 
     // B) joinBag
     if (data === "joinBag" && bag.state === ChatState.BAG_CREATED) {
-      await prisma.user.upsert({
-        where: { id: BigInt(user_id) },
-        update: {},
-        create: {
-          id: BigInt(user_id),
-          username: from.username,
-          first_name: from.first_name,
-          last_name: from.last_name,
-        },
-      });
+      const userInDb = await prisma.user.upsert({
+            where: { id: BigInt(user_id) },
+            update: {},
+            create: {
+              id: BigInt(user_id),
+              username: from.username,
+              first_name: from.first_name,
+              last_name: from.last_name,
+            },
+          });
+      // Se não tem carteira, avisar e interromper
+      if (!userInDb.wallet_address) {
+        await fetch(`${API}/answerCallbackQuery`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            callback_query_id,
+            text: "❌ Você precisa conectar uma carteira antes de entrar na bag.",
+            show_alert: true,
+          }),
+        });
+
+        await fetch(`${API}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id,
+            text: `⚠️ <a href="tg://user?id=${user_id}">${from.first_name}</a>, para entrar na bag você precisa primeiro conectar uma carteira no mini app.\n\nClique no nome do bot acima e em seguida toque em "Abrir App". Vá até a aba "Perfil" e conecte sua carteira TON.`,
+            parse_mode: "HTML",
+          }),
+        });
+
+        return;
+      }
 
       await prisma.bagUser.upsert({
         where: {

@@ -12,6 +12,7 @@ model User {
   username             String?
   first_name           String?
   last_name            String?
+  wallet_address       String? 
   created_at           DateTime         @default(now())
   bags                 BagUser[]
   bags_admin           Bag[]            @relation("AdminOf")
