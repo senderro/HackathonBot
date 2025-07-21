@@ -163,7 +163,7 @@ console.log("Bag after upsert:", bag);
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             chat_id,
-            text: `⚠️ <a href="tg://user?id=${user_id}">${from.first_name}</a>, para entrar na bag você precisa primeiro conectar uma carteira no mini app.\n\nClique no nome do bot acima e em seguida toque em "Abrir App". Vá até a aba "Perfil" e conecte sua carteira TON.`,
+            text: `⚠️ <a href="tg://user?id=${user_id}">${from.first_name}</a>, para entrar na bag você precisa primeiro conectar uma carteira no mini app.\n\nClique no meu perfil e em seguida toque em "Abrir App". Vá até a aba "Perfil" no aplicativo e conecte sua carteira TON.`,
             parse_mode: "HTML",
           }),
         });
