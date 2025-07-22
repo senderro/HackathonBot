@@ -12,8 +12,8 @@ model User {
   username             String?
   first_name           String?
   last_name            String?
-  wallet_address       String? 
   created_at           DateTime         @default(now())
+  wallet_address       String?
   bags                 BagUser[]
   bags_admin           Bag[]            @relation("AdminOf")
   pagamentos_feitos    PendingPayment[] @relation("Pagador")
@@ -74,16 +74,19 @@ model Transaction {
 }
 
 model PendingPayment {
-  id             Int       @id @default(autoincrement())
-  bag_id         Int
-  user_id_from   BigInt
-  user_id_to     BigInt
-  valor          Decimal   @db.Decimal(10, 2)
-  pago           Boolean   @default(false)
-  data_pagamento DateTime?
-  bag            Bag       @relation(fields: [bag_id], references: [id], onDelete: Cascade)
-  devedor        User      @relation("Pagador", fields: [user_id_from], references: [id], onDelete: Cascade)
-  recebedor      User      @relation("Recebedor", fields: [user_id_to], references: [id], onDelete: Cascade)
+  id              Int       @id @default(autoincrement())
+  bag_id          Int
+  user_id_from    BigInt
+  user_id_to      BigInt
+  valor           Decimal   @db.Decimal(10, 2)
+  pago            Boolean   @default(false)
+  data_pagamento  DateTime?
+  pollAttempts    Int       @default(0)
+  txHash          String?
+  user_to_address String?
+  bag             Bag       @relation(fields: [bag_id], references: [id], onDelete: Cascade)
+  devedor         User      @relation("Pagador", fields: [user_id_from], references: [id], onDelete: Cascade)
+  recebedor       User      @relation("Recebedor", fields: [user_id_to], references: [id], onDelete: Cascade)
 
   @@map("pending_payments")
 }
