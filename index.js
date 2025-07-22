@@ -342,79 +342,96 @@ console.log("Bag after upsert:", bag);
 
   return;
 }
+  if (msg.text.trim().toLowerCase() === "/finalizar") {
+    console.log("Comando /finalizar recebido no chat", chat_id);
 
-  // 3.2) Processar transação após bag criada
-if (bag.state === "BAG_CREATED") {
-    // 1️⃣ Registrar transação local
-    await prisma.transaction.create({
-      data: {
-        bag_id: bag.id,
-        user_id: BigInt(msg.from.id),
-        message_text: msg.text,
-      },
+    const bag = await prisma.bags.findUnique({
+      where: { chat_id: BigInt(chat_id) },
     });
+    if (!bag || bag.state !== ChatState.BAG_CREATED) {
+      await fetch(`${API}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id,
+          text: "❌ Não há nenhuma bag ativa para finalizar. Use após criar a bag e registrar transações.",
+        }),
+      });
+      return;
+    }
 
-    // 2️⃣ Preparar payload
-    const participants = await prisma.bagUser.findMany({
+    // 1) coleta participantes do DB
+    const participants = await prisma.bag_users.findMany({
       where: { bag_id: bag.id },
-      include: { user: true },
+      include: { users: true },
     });
+
+    // 2) monta payload para a API externa
     const usuarios = {};
     const gastos = {};
-
     participants.forEach(p => {
       const uid = p.user_id.toString();
-      usuarios[uid] = p.user.first_name;
-      gastos[uid] = p.total_spent || 0;
+      usuarios[uid] = p.users.first_name || p.users.username || uid;
+      gastos[uid]   = p.total_spent || 0;
     });
 
-    const ultima_transacao = {
-      usuario_id: msg.from.id.toString(),
-      descricao: msg.text,
-    };
+    console.log("Payload /splitbill", { usuarios, gastos });
 
-    // 3️⃣ Chamada à API externa
-    const resp = await fetch(
-      "https://hackatonllm-production.up.railway.app/newtransaction",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.EXTERNAL_API_TOKEN}`,
-        },
-        body: JSON.stringify({ usuarios, gastos, ultima_transacao }),
-      }
-    );
+    // 3) chama a API de split
+    const resp = await fetch("https://hackatonllm-production.up.railway.app/splitbill", {
+      method: "POST",
+      headers: {
+        "Content-Type":  "application/json",
+        "Authorization": `Bearer ${process.env.EXTERNAL_API_TOKEN}`,
+      },
+      body: JSON.stringify({ usuarios, gastos }),
+    });
     const json = await resp.json();
-    console.log("API response:", json);
+    console.log("Resposta /splitbill:", json);
 
-    // 4️⃣ Atualizar gastos no DB
-    if (json.gastos) {
-      for (const uid in json.gastos) {
-        await prisma.bagUser.update({
-          where: {
-            bag_id_user_id: {
-              bag_id: bag.id,
-              user_id: BigInt(uid),
-            },
-          },
-          data: { total_spent: json.gastos[uid] },
-        });
-      }
+    // 4) monta a mensagem de resumo
+    let msgText = "📊 *Resumo final da bag*\n\n";
+    msgText += "*Quem deve pagar a quem:*\n";
+    if (Array.isArray(json.transacoes_por_pessoa)) {
+      json.transacoes_por_pessoa.forEach((t) => {
+        // t.de e t.para são as chaves em `usuarios`
+        const nameDe   = usuarios[t.de]   || t.de;
+        const namePara = usuarios[t.para] || t.para;
+        msgText += `• *${nameDe}* → *${namePara}*: R$ ${t.valor.toFixed(2)}\n`;
+      });
     }
-    const descricao = msg.text;
+    msgText += `\n*Gasto total:* R$ ${json.total_gastos.toFixed(2)}`;
+
     await fetch(`${API}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id,
-        text: `✅ Transação registrada!\n👤 <a href="tg://user?id=${msg.from.id}">${msg.from.first_name}</a>: ${descricao}`,
-        parse_mode: "HTML",
+        text: msgText,
+        parse_mode: "Markdown",
       }),
     });
 
+    // 5) cria os pending_payments no DB
+    for (const t of json.transacoes_por_pessoa || []) {
+      await prisma.pending_payments.create({
+        data: {
+          bag_id:           bag.id,
+          user_id_from:     BigInt(t.de),
+          user_id_to:       BigInt(t.para),
+          valor:            t.valor,        // Decimal(10,2)
+          pago:             false,
+          data_pagamento:   null,
+          pollAttempts:     0,
+          txHash:           null,
+          user_to_address:  null,
+        },
+      });
+    }
+
     return;
   }
+
 
   
 });
