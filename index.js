@@ -405,8 +405,11 @@ msgText += `\n*Gasto total:* R$ ${total.toFixed(2)}`;
         parse_mode: "Markdown",
       }),
     });
-
-    for (const t of json.transacoes_para_acerto) {
+    await prisma.bag.update({
+      where: { id: bag.id },
+      data: { state: ChatState.AWAITING_PAYMENTS },
+    });
+    for (const t of acertos) {
       await prisma.pendingPayment.create({
         data: {
           bag_id:         bag.id,
@@ -421,10 +424,7 @@ msgText += `\n*Gasto total:* R$ ${total.toFixed(2)}`;
         },
       });
     }
-    await prisma.bag.update({
-        where: { id: bag.id },
-        data: { state: ChatState.AWAITING_PAYMENTS },
-      });
+    
     return;
   }
 });
