@@ -410,8 +410,8 @@ msgText += `\n*Gasto total:* R$ ${total.toFixed(2)}`;
       await prisma.pendingPayment.create({
         data: {
           bag_id:         bag.id,
-          user_id_from:   BigInt(t.de),
-          user_id_to:     BigInt(t.para),
+          user_id_from:   BigInt(t.para),
+          user_id_to:     BigInt(t.de),
           valor:          t.valor,
           pago:           false,
           data_pagamento: null,
