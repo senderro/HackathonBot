@@ -361,7 +361,7 @@ console.log("Bag after upsert:", bag);
     }
 
     // 1) coleta participantes do DB
-    const participants = await prisma.bag_users.findMany({
+    const participants = await prisma.bagUser.findMany({
       where: { bag_id: bag.id },
       include: { users: true },
     });
