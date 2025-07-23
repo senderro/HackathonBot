@@ -374,12 +374,12 @@ app.post("/webhook", async (req, res) => {
     const json = await respSplit.json();
 
     let msgText = "📊 *Resumo final da bag*\n\n*Quem deve pagar a quem:*\n";
-    json.transacoes_por_pessoa.forEach(t => {
+    json.transacoes_para_acerto.forEach(t => {
       const de   = usuarios[t.de]   || t.de;
       const para = usuarios[t.para] || t.para;
       msgText += `• *${de}* → *${para}*: R$ ${t.valor.toFixed(2)}\n`;
     });
-    msgText += `\n*Gasto total:* R$ ${json.total_gastos.toFixed(2)}`;
+    msgText += `\n*Gasto total:* R$ ${json.transacoes_para_acerto.toFixed(2)}`;
 
     await fetch(`${API}/sendMessage`, {
       method: "POST",
@@ -391,7 +391,7 @@ app.post("/webhook", async (req, res) => {
       }),
     });
 
-    for (const t of json.transacoes_por_pessoa) {
+    for (const t of json.transacoes_para_acerto) {
       await prisma.pendingPayment.create({
         data: {
           bag_id:         bag.id,
