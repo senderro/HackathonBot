@@ -374,12 +374,27 @@ app.post("/webhook", async (req, res) => {
     const json = await respSplit.json();
 
     let msgText = "📊 *Resumo final da bag*\n\n*Quem deve pagar a quem:*\n";
-    json.transacoes_para_acerto.forEach(t => {
-      const de   = usuarios[t.de]   || t.de;
-      const para = usuarios[t.para] || t.para;
-      msgText += `• *${de}* → *${para}*: R$ ${t.valor.toFixed(2)}\n`;
-    });
-    msgText += `\n*Gasto total:* R$ ${json.transacoes_para_acerto.toFixed(2)}`;
+
+// itera sobre as transações de acerto
+const acertos = Array.isArray(json.transacoes_para_acerto)
+  ? json.transacoes_para_acerto
+  : [];
+
+if (acertos.length) {
+  acertos.forEach(t => {
+    const de   = usuarios[t.de]   || t.de;
+    const para = usuarios[t.para] || t.para;
+    msgText += `• *${de}* → *${para}*: R$ ${t.valor.toFixed(2)}\n`;
+  });
+} else {
+  msgText += "Nenhuma dívida a ser acertada. Todos estão equilibrados!\n";
+}
+
+// aqui sim usamos o total numérico
+const total = typeof json.total_gastos === "number"
+  ? json.total_gastos
+  : 0;
+msgText += `\n*Gasto total:* R$ ${total.toFixed(2)}`;
 
     await fetch(`${API}/sendMessage`, {
       method: "POST",
