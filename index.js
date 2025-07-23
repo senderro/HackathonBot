@@ -345,7 +345,7 @@ console.log("Bag after upsert:", bag);
   if (msg.text.trim().toLowerCase() === "/finalizar") {
     console.log("Comando /finalizar recebido no chat", chat_id);
 
-    const bag = await prisma.bags.findUnique({
+    const bag = await prisma.bag.findUnique({
       where: { chat_id: BigInt(chat_id) },
     });
     if (!bag || bag.state !== ChatState.BAG_CREATED) {
