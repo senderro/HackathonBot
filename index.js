@@ -1,8 +1,10 @@
 import express from "express";
 import { PrismaClient, ChatState } from "@prisma/client";
+import cronJobRouter from "./cronjobacorda.js";
 
 const app = express();
 app.use(express.json());
+app.use(cronJobRouter);
 
 const prisma = new PrismaClient();
 const TOKEN = process.env.BOT_TOKEN;
