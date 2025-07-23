@@ -421,6 +421,10 @@ msgText += `\n*Gasto total:* R$ ${total.toFixed(2)}`;
         },
       });
     }
+    await prisma.bag.update({
+        where: { id: bag.id },
+        data: { state: ChatState.AWAITING_PAYMENTS },
+      });
     return;
   }
 });
