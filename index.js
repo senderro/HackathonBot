@@ -1,5 +1,4 @@
 import express from "express";
-import fetch from "node-fetch"; // npm install node-fetch@2
 import { PrismaClient, ChatState } from "@prisma/client";
 
 const app = express();
