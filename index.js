@@ -1,10 +1,8 @@
 import express from "express";
 import { PrismaClient, ChatState } from "@prisma/client";
-import cronJobRouter from "./cronjobacorda.js";
 
 const app = express();
 app.use(express.json());
-app.use(cronJobRouter);
 
 const prisma = new PrismaClient();
 const TOKEN = process.env.BOT_TOKEN;
@@ -55,10 +53,10 @@ app.post("/webhook", async (req, res) => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             chat_id,
-            text: "👋 Olá! Não há nenhuma Bag ativa neste grupo ainda. Crie uma Bag para começar",
+            text: "👋 Olá! Não há nenhuma bag ativa neste grupo ainda.",
             reply_markup: {
               inline_keyboard: [
-                [{ text: "➕ Criar Bag", callback_data: "createBag" }],
+                [{ text: "➕ Criar bag", callback_data: "createBag" }],
               ],
             },
           }),
@@ -80,7 +78,7 @@ app.post("/webhook", async (req, res) => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             chat_id,
-            text: `🎉 Bag '*${bag.name}*' já criada!`,
+            text: `🎉 Bag *${bag.name}* já criada!`,
             parse_mode: "Markdown",
             reply_markup: {
               inline_keyboard: [
@@ -115,7 +113,7 @@ app.post("/webhook", async (req, res) => {
         body: JSON.stringify({
           chat_id,
           message_id: msg_id,
-          text: "📝 Por favor, me envie o *nome da Bag*.",
+          text: "Por favor, me envie o *nome da bag*.",
           parse_mode: "Markdown",
           reply_markup: { inline_keyboard: [] },
         }),
@@ -189,10 +187,10 @@ app.post("/webhook", async (req, res) => {
         .map(p => {
           const u = p.user;
           return u.username
-            ? `- @${u.username}`
-            : `- [${u.first_name}](tg://user?id=${u.id})`;
+            ? `@${u.username}`
+            : `[${u.first_name}](tg://user?id=${u.id})`;
         })
-        .join("\n");
+        .join(" ");
 
       await fetch(`${API}/editMessageText`, {
         method: "POST",
@@ -246,7 +244,7 @@ app.post("/webhook", async (req, res) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id,
-        text: `🎉 Bag '*${nome}*' criada com sucesso!\n\nQuem quiser participar, clique em “Entrar na bag”.`,
+        text: `🎉 Bag *${nome}* criada com sucesso!\n\nQuem quiser participar, clique em “Entrar na bag”.`,
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
@@ -263,13 +261,11 @@ app.post("/webhook", async (req, res) => {
     bag.state === ChatState.BAG_CREATED &&
     msg.text.trim().toLowerCase().startsWith("/g")
   ) {
-    const messageText = msg.text.trim().replace(/^\/g\s*/, "");
-
     await prisma.transaction.create({
       data: {
         bag_id: bag.id,
         user_id: BigInt(msg.from.id),
-        message_text: messageText,
+        message_text: msg.text,
       },
     });
 
@@ -286,7 +282,7 @@ app.post("/webhook", async (req, res) => {
     });
     const ultima_transacao = {
       usuario_id: msg.from.id.toString(),
-      descricao: messageText,
+      descricao: msg.text,
     };
 
     const resp = await fetch(
@@ -325,7 +321,7 @@ app.post("/webhook", async (req, res) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id,
-        text: `✅ Transação registrada:\n<a href="tg://user?id=${msg.from.id}">${msg.from.first_name}</a>: ${messageText}`,
+        text: `Transação registrada:\n<a href="tg://user?id=${msg.from.id}">${msg.from.first_name}</a>: ${msg.text}`,
         parse_mode: "HTML",
       }),
     });
@@ -378,12 +374,27 @@ app.post("/webhook", async (req, res) => {
     const json = await respSplit.json();
 
     let msgText = "📊 *Resumo final da bag*\n\n*Quem deve pagar a quem:*\n";
-    json.transacoes_para_acerto.forEach(t => {
-      const de = usuarios[t.de] || t.de;
-      const para = usuarios[t.para] || t.para;
-      msgText += `• *${de}* → *${para}*: R$ ${t.valor.toFixed(2)}\n`;
-    });
-    msgText += `\n*Gasto total:* R$ ${json.transacoes_para_acerto.toFixed(2)}`;
+
+    // itera sobre as transações de acerto
+    const acertos = Array.isArray(json.transacoes_para_acerto)
+      ? json.transacoes_para_acerto
+      : [];
+
+    if (acertos.length) {
+      acertos.forEach(t => {
+        const de = usuarios[t.de] || t.de;
+        const para = usuarios[t.para] || t.para;
+        msgText += `• *${de}* → *${para}*: R$ ${t.valor.toFixed(2)}\n`;
+      });
+    } else {
+      msgText += "Nenhuma dívida a ser acertada. Todos estão equilibrados!\n";
+    }
+
+    // aqui sim usamos o total numérico
+    const total = typeof json.total_gastos === "number"
+      ? json.total_gastos
+      : 0;
+    msgText += `\n*Gasto total:* R$ ${total.toFixed(2)}`;
 
     await fetch(`${API}/sendMessage`, {
       method: "POST",
