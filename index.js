@@ -6,7 +6,7 @@ app.use(express.json());
 
 const prisma = new PrismaClient();
 const TOKEN = process.env.BOT_TOKEN;
-const API   = `https://api.telegram.org/bot${TOKEN}`;
+const API = `https://api.telegram.org/bot${TOKEN}`;
 
 app.post("/webhook", async (req, res) => {
   const update = req.body;
@@ -18,7 +18,7 @@ app.post("/webhook", async (req, res) => {
   if (update.my_chat_member) {
     const { new_chat_member, from, chat } = update.my_chat_member;
     if (new_chat_member.user.is_bot && new_chat_member.status === "member") {
-      const chat_id  = chat.id;
+      const chat_id = chat.id;
       const admin_id = from.id;
 
       await prisma.user.upsert({
@@ -36,11 +36,11 @@ app.post("/webhook", async (req, res) => {
         where: { chat_id: BigInt(chat_id) },
         update: {},
         create: {
-          chat_id:           BigInt(chat_id),
-          admin_user_id:     BigInt(admin_id),
-          name:              "",
+          chat_id: BigInt(chat_id),
+          admin_user_id: BigInt(admin_id),
+          name: "",
           welcome_message_id: 0,
-          state:             ChatState.BOT_ADDED,
+          state: ChatState.BOT_ADDED,
         },
       });
 
@@ -53,10 +53,10 @@ app.post("/webhook", async (req, res) => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             chat_id,
-            text: "👋 Olá! Não há nenhuma bag ativa neste grupo ainda.",
+            text: "👋 Olá! Não há nenhuma Bag ativa neste grupo ainda. Crie uma Bag para começar",
             reply_markup: {
               inline_keyboard: [
-                [{ text: "➕ Criar bag", callback_data: "createBag" }],
+                [{ text: "➕ Criar Bag", callback_data: "createBag" }],
               ],
             },
           }),
@@ -78,7 +78,7 @@ app.post("/webhook", async (req, res) => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             chat_id,
-            text: `🎉 Bag *${bag.name}* já criada!`,
+            text: `🎉 Bag '*${bag.name}*' já criada!`,
             parse_mode: "Markdown",
             reply_markup: {
               inline_keyboard: [
@@ -97,7 +97,7 @@ app.post("/webhook", async (req, res) => {
   if (update.callback_query) {
     const { data, message, from, id: callback_query_id } = update.callback_query;
     const chat_id = message.chat.id;
-    const msg_id  = message.message_id;
+    const msg_id = message.message_id;
     const user_id = from.id;
 
     const bag = await prisma.bag.findUnique({
@@ -113,7 +113,7 @@ app.post("/webhook", async (req, res) => {
         body: JSON.stringify({
           chat_id,
           message_id: msg_id,
-          text: "Por favor, me envie o *nome da bag*.",
+          text: "📝 Por favor, me envie o *nome da Bag*.",
           parse_mode: "Markdown",
           reply_markup: { inline_keyboard: [] },
         }),
@@ -168,13 +168,13 @@ app.post("/webhook", async (req, res) => {
       await prisma.bagUser.upsert({
         where: {
           bag_id_user_id: {
-            bag_id:  bag.id,
+            bag_id: bag.id,
             user_id: BigInt(user_id),
           },
         },
         update: {},
         create: {
-          bag_id:  bag.id,
+          bag_id: bag.id,
           user_id: BigInt(user_id),
         },
       });
@@ -187,10 +187,10 @@ app.post("/webhook", async (req, res) => {
         .map(p => {
           const u = p.user;
           return u.username
-            ? `@${u.username}`
-            : `[${u.first_name}](tg://user?id=${u.id})`;
+            ? `- @${u.username}`
+            : `- [${u.first_name}](tg://user?id=${u.id})`;
         })
-        .join(" ");
+        .join("\n");
 
       await fetch(`${API}/editMessageText`, {
         method: "POST",
@@ -244,7 +244,7 @@ app.post("/webhook", async (req, res) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id,
-        text: `🎉 Bag *${nome}* criada com sucesso!\n\nQuem quiser participar, clique em “Entrar na bag”.`,
+        text: `🎉 Bag '*${nome}*' criada com sucesso!\n\nQuem quiser participar, clique em “Entrar na bag”.`,
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
@@ -261,11 +261,13 @@ app.post("/webhook", async (req, res) => {
     bag.state === ChatState.BAG_CREATED &&
     msg.text.trim().toLowerCase().startsWith("/g")
   ) {
+    const messageText = msg.text.trim().replace(/^\/g\s*/, "");
+
     await prisma.transaction.create({
       data: {
-        bag_id:       bag.id,
-        user_id:      BigInt(msg.from.id),
-        message_text: msg.text,
+        bag_id: bag.id,
+        user_id: BigInt(msg.from.id),
+        message_text: messageText,
       },
     });
 
@@ -274,15 +276,15 @@ app.post("/webhook", async (req, res) => {
       include: { user: true },
     });
     const usuarios = {};
-    const gastos   = {};
+    const gastos = {};
     participants.forEach(p => {
       const uid = p.user_id.toString();
       usuarios[uid] = uid;
-      gastos[uid]   = p.total_spent || 0;
+      gastos[uid] = p.total_spent || 0;
     });
     const ultima_transacao = {
       usuario_id: msg.from.id.toString(),
-      descricao:  msg.text,
+      descricao: messageText,
     };
 
     const resp = await fetch(
@@ -290,8 +292,8 @@ app.post("/webhook", async (req, res) => {
       {
         method: "POST",
         headers: {
-          "Content-Type":  "application/json",
-          Authorization:   `Bearer ${process.env.EXTERNAL_API_TOKEN}`,
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.EXTERNAL_API_TOKEN}`,
         },
         body: JSON.stringify({ usuarios, gastos, ultima_transacao }),
       }
@@ -307,7 +309,7 @@ app.post("/webhook", async (req, res) => {
         await prisma.bagUser.update({
           where: {
             bag_id_user_id: {
-              bag_id:  bag.id,
+              bag_id: bag.id,
               user_id: BigInt(uid),
             },
           },
@@ -321,7 +323,7 @@ app.post("/webhook", async (req, res) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id,
-        text: `Transação registrada:\n<a href="tg://user?id=${msg.from.id}">${msg.from.first_name}</a>: ${msg.text}`,
+        text: `✅ Transação registrada:\n<a href="tg://user?id=${msg.from.id}">${msg.from.first_name}</a>: ${messageText}`,
         parse_mode: "HTML",
       }),
     });
@@ -349,11 +351,11 @@ app.post("/webhook", async (req, res) => {
       include: { user: true },
     });
     const usuarios = {};
-    const gastos   = {};
+    const gastos = {};
     participants.forEach(p => {
-      const uid       = p.user_id.toString();
+      const uid = p.user_id.toString();
       usuarios[uid] = p.user.first_name || p.user.username || uid;
-      gastos[uid]   = p.total_spent || 0;
+      gastos[uid] = p.total_spent || 0;
     });
 
     const respSplit = await fetch(
@@ -361,8 +363,8 @@ app.post("/webhook", async (req, res) => {
       {
         method: "POST",
         headers: {
-          "Content-Type":  "application/json",
-          Authorization:   `Bearer ${process.env.EXTERNAL_API_TOKEN}`,
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.EXTERNAL_API_TOKEN}`,
         },
         body: JSON.stringify({ usuarios, gastos }),
       }
@@ -375,7 +377,7 @@ app.post("/webhook", async (req, res) => {
 
     let msgText = "📊 *Resumo final da bag*\n\n*Quem deve pagar a quem:*\n";
     json.transacoes_para_acerto.forEach(t => {
-      const de   = usuarios[t.de]   || t.de;
+      const de = usuarios[t.de] || t.de;
       const para = usuarios[t.para] || t.para;
       msgText += `• *${de}* → *${para}*: R$ ${t.valor.toFixed(2)}\n`;
     });
@@ -394,14 +396,14 @@ app.post("/webhook", async (req, res) => {
     for (const t of json.transacoes_para_acerto) {
       await prisma.pendingPayment.create({
         data: {
-          bag_id:         bag.id,
-          user_id_from:   BigInt(t.de),
-          user_id_to:     BigInt(t.para),
-          valor:          t.valor,
-          pago:           false,
+          bag_id: bag.id,
+          user_id_from: BigInt(t.de),
+          user_id_to: BigInt(t.para),
+          valor: t.valor,
+          pago: false,
           data_pagamento: null,
-          pollAttempts:   0,
-          txHash:         null,
+          pollAttempts: 0,
+          txHash: null,
           user_to_address: null,
         },
       });
