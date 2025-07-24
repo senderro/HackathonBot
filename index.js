@@ -1,8 +1,10 @@
 import express from "express";
 import { PrismaClient, ChatState } from "@prisma/client";
+import cronJobRouter from "./cronjobacorda.js";
 
 const app = express();
 app.use(express.json());
+app.use(cronJobRouter);
 
 const prisma = new PrismaClient();
 const TOKEN = process.env.BOT_TOKEN;
@@ -392,8 +394,11 @@ app.post("/webhook", async (req, res) => {
         parse_mode: "Markdown",
       }),
     });
-
-    for (const t of json.transacoes_para_acerto) {
+    await prisma.bag.update({
+      where: { id: bag.id },
+      data: { state: ChatState.AWAITING_PAYMENTS },
+    });
+    for (const t of acertos) {
       await prisma.pendingPayment.create({
         data: {
           bag_id: bag.id,
@@ -408,6 +413,7 @@ app.post("/webhook", async (req, res) => {
         },
       });
     }
+
     return;
   }
 });
